@@ -1,0 +1,68 @@
+package com.browserstack.assignment;
+
+import org.openqa.selenium.*;
+import org.openqa.selenium.remote.RemoteWebDriver;
+import org.openqa.selenium.MutableCapabilities;
+
+import java.net.URL;
+import java.util.*;
+import org.jsoup.*;
+import org.jsoup.nodes.Document;
+import org.jsoup.select.Elements;
+import org.jsoup.nodes.Element;
+
+public class BrowserStacktest {
+	
+	
+	
+	 public static final String USERNAME = "poojalakshminaga_xWYFPb"; // Replace with your BrowserStack username
+	    public static final String AUTOMATE_KEY = "CasE3r5tCCyY7VqqjTn7"; // Replace with your BrowserStack access key
+	    public static final String URL = "https://" + USERNAME + ":" + AUTOMATE_KEY + "@hub-cloud.browserstack.com/wd/hub";
+
+
+	    public static void main(String[] args) throws Exception {
+	    	MutableCapabilities capabilities = new MutableCapabilities();
+	        capabilities.setCapability("browserName", "Chrome");
+	        capabilities.setCapability("browserVersion", "latest");
+
+	        Map<String, Object> bstackOptions = new HashMap<>();
+	        bstackOptions.put("os", "Windows");
+	        bstackOptions.put("osVersion", "10");
+	        bstackOptions.put("local", "false");
+	        bstackOptions.put("buildName", "Build - ElPais");
+	        bstackOptions.put("sessionName", "ElPais Opinion Article URL + Title");
+
+	        capabilities.setCapability("bstack:options", bstackOptions);
+
+	        WebDriver driver = new RemoteWebDriver(new URL(URL), capabilities);
+
+	        try {
+	            driver.get("https://elpais.com/opinion/");
+	            Thread.sleep(3000); // Wait for page load
+
+	            List<WebElement> articles = driver.findElements(By.cssSelector("article a"));
+
+	            int count = 0;
+	            for (WebElement article : articles) {
+	                String url = article.getAttribute("href");
+	                String title = article.getText().trim();
+
+	                if (url != null && title.length() > 10 && url.contains("/opinion/")) {
+	                    System.out.println("🔗 URL: " + url);
+	                    System.out.println("📰 Title: " + title);
+	                    System.out.println("--------------------------------------");
+	                    count++;
+	                }
+
+	                if (count == 5) break;
+	            }
+	            System.out.println(" BrowserStack Test is Over");
+
+	        } finally {
+	            driver.quit();
+	        }
+	        
+	        
+	    }
+		 
+}
