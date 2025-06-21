@@ -1,0 +1,190 @@
+package com.browserstack.assignment;
+
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.select.Elements;
+import org.openqa.selenium.*;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.time.Duration;
+import java.util.*;
+import java.util.NoSuchElementException;
+public class pratice {
+	
+	public static String translateText(String text) {
+        try {
+            String encodedText = URLEncoder.encode(text, StandardCharsets.UTF_8);
+            String urlStr = String.format(
+                    "https://translate.googleapis.com/translate_a/single?client=gtx&sl=es&tl=en&dt=t&q=%s", encodedText
+            );
+
+            URL url = new URL(urlStr);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+
+            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            StringBuilder response = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                response.append(line);
+            }
+            reader.close();
+
+            // Extract the translation from the response
+            String result = response.toString();
+            int start = result.indexOf("\"");
+            int end = result.indexOf("\"", start + 1);
+            if (start != -1 && end != -1) {
+                return result.substring(start + 1, end);
+            }
+        } catch (Exception e) {
+            System.out.println("Translation failed: " + e.getMessage());
+        }
+        return "[Translation failed]";
+    }
+
+    public static void main(String[] args) {
+        System.setProperty("webdriver.chrome.driver", "C:\\Users\\pooja lakshmi\\eclipse-workspace\\elpais-scraper\\drivers\\chromedriver.exe");
+        WebDriver driver = new ChromeDriver();
+
+        List<String> translatedTitles = new ArrayList<>();
+
+        try {
+            driver.get("https://elpais.com/opinion/");
+
+            List<WebElement> linkElements = driver.findElements(By.cssSelector("a[href^='https://elpais.com/opinion/']"));
+            Set<String> articleUrls = new LinkedHashSet<>();
+
+            for (WebElement link : linkElements) {
+                try {
+                    String href = link.getAttribute("href");
+                    if (href.contains("/2025") && !href.contains("editoriales")) {
+                        articleUrls.add(href);
+                    }
+                } catch (StaleElementReferenceException ignored) {
+                }
+                if (articleUrls.size() >= 5) break;
+            }
+
+            int index = 1;
+            for (String url : articleUrls) {
+                System.out.println("Opening article: " + url);
+                driver.get(url);
+
+                try {
+                    WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+                    wait.until(webDriver -> ((JavascriptExecutor) webDriver)
+                            .executeScript("return document.readyState").equals("complete"));
+
+                    Thread.sleep(2000);
+
+                    String title = driver.findElement(By.cssSelector("h1")).getText();
+                 // Try to get <h1> title
+                    String title1 = "";
+                    try {
+                        WebDriverWait wait1 = new WebDriverWait(driver, java.time.Duration.ofSeconds(10));
+                        WebElement h1Elem = wait1.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("h1")));
+                        title1 = h1Elem.getText();
+                    } catch (TimeoutException | NoSuchElementException e) {
+                        // title remains empty
+                    }
+
+                    // Only print title ONCE, with fallback if needed
+                    if (title1 == null || title1.trim().isEmpty()) {
+                        String[] urlParts = url.split("/");
+                        title1 = urlParts[urlParts.length - 1].replace("-", " ").replace(".html", "");
+                    }
+                    System.out.println("Title: " + title1);
+                    
+
+                    String translated = translateText(title1);
+                    translatedTitles.add(translated);
+                    System.out.println("Translated Title: " + translated);
+
+                    // Content extraction using JSoup
+                    Document doc = Jsoup.parse(driver.getPageSource());
+                    Elements contentElements = doc.select("div.a_c p, div.article_body p, article p");
+
+                    StringBuilder contentBuilder = new StringBuilder();
+                    for (org.jsoup.nodes.Element paragraph : contentElements) {
+                        contentBuilder.append(paragraph.text()).append("\n");
+                    }
+
+                    String content = contentBuilder.toString().trim();
+                    System.out.println("Content:\n" + (content.isEmpty() ? "(No content extracted)" : content));
+
+                    // Image download
+                    try {
+                        WebElement imageElement = driver.findElement(By.cssSelector("figure img"));
+                        String imageUrl = imageElement.getAttribute("src");
+
+                        if (imageUrl != null && !imageUrl.isEmpty()) {
+                            String imageFileName = "article_" + index + ".jpg";
+                            downloadImage(imageUrl, imageFileName);
+                            System.out.println("Image saved as: " + imageFileName);
+                        } else {
+                            System.out.println("No image found.");
+                        }
+                    } catch (NoSuchElementException e) {
+                        System.out.println("No image found.");
+                    }
+
+                    System.out.println("\n========================\n");
+                    index++;
+
+                } catch (Exception e) {
+                    System.out.println("Error processing article: " + url);
+                }
+            }
+
+            // Count repeated words
+            Map<String, Integer> wordCountMap = new HashMap<>();
+            for (String tTitle : translatedTitles) {
+                String[] words = tTitle.toLowerCase().replaceAll("[^a-z ]", " ").split("\\s+");
+                for (String word : words) {
+                    if (!word.isEmpty()) {
+                        wordCountMap.put(word, wordCountMap.getOrDefault(word, 0) + 1);
+                    }
+                }
+            }
+
+            boolean found = false;
+            for (Map.Entry<String, Integer> entry : wordCountMap.entrySet()) {
+                if (entry.getValue() > 2) {
+                    if (!found) {
+                        System.out.println("Repeated words in translated titles (more than twice):");
+                        found = true;
+                    }
+                    System.out.println(entry.getKey() + ": " + entry.getValue());
+                }
+            }
+            if (!found) {
+                System.out.println("Count of Repeated Words In Transalated Title: 0");
+            }
+
+        } catch (Exception e) {
+            System.out.println("Fatal error: " + e.getMessage());
+        } finally {
+            driver.quit();
+        }
+    }
+
+    private static void downloadImage(String imageUrl, String fileName) {
+        try (InputStream in = new URL(imageUrl).openStream()) {
+            Files.copy(in, new File(fileName).toPath(), StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            System.out.println("Failed to download image: " + e.getMessage());
+        }
+    }
+	    
+
+}
