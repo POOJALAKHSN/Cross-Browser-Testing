@@ -1,0 +1,142 @@
+package com.browserstack.assignment;
+
+import org.openqa.selenium.*;
+import org.openqa.selenium.remote.*;
+import org.openqa.selenium.support.ui.WebDriverWait;
+
+import java.net.URL;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.*;
+
+
+public class CrossBrowsingParallelTest {
+	
+	// ======= 1. BrowserStack credentials =======
+    public static final String USERNAME = "poojalakshminaga_xWYFPb";
+    public static final String ACCESS_KEY = "CasE3r5tCCyY7VqqjTn7"; 
+
+    // ======= 2. Runnable task for each browser =======
+    static class CrossBrowserTask implements Runnable {
+        private final MutableCapabilities caps;
+        private final String label;
+
+        public CrossBrowserTask(MutableCapabilities caps, String label) {
+            this.caps = caps;
+            this.label = label;
+        }
+        @Override
+        public void run() {
+            WebDriver driver = null;
+            try {
+                driver = new RemoteWebDriver(
+                    new URL("https://hub.browserstack.com/wd/hub"),
+                    caps
+                );
+                System.out.println("✅ Driver launched for: " + label);
+
+                driver.get("https://elpais.com/opinion/");
+                WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+                List<WebElement> articleElements = wait.until(driver1 -> driver1.findElements(By.cssSelector("article a[href]")).stream().filter(e -> !e.getText().trim().isEmpty()).toList());
+                
+                if (articleElements == null || articleElements.isEmpty()) {
+                    System.out.println("[" + label + "] No articles found!");
+                    return;
+                }
+                
+              
+                int count = 0;
+              
+				for (WebElement article : articleElements) {
+                    String title = article.getText().trim();
+                    String url = article.getAttribute("href");
+
+                    if (!title.isEmpty() && url != null && url.startsWith("https://")) {
+                        String lowerTitle = title.toLowerCase();
+
+                        // Skip known unwanted sections or metadata
+                        if (lowerTitle.contains("editorial") ||
+                            lowerTitle.contains("tribuna") ||
+                            lowerTitle.contains("el debate") ||
+                            lowerTitle.matches(".*\\d{1,2} \\w+ \\d{4}.*") ||   // Skip date text
+                            url.contains("/autor/") ||                          // Skip author pages
+                            url.contains("/hemeroteca/"))                       // Skip archive pages
+                            continue;
+
+                        System.out.println("[" + label + "] " + title);
+                        System.out.println(url + "\n");
+
+                        count++;
+                        if (count >= 5) break;
+                    }
+                }
+				 ((JavascriptExecutor) driver).executeScript("browserstack_executor: {\"action\": \"setSessionStatus\", \"arguments\": {\"status\":\"passed\", \"reason\": \"Articles loaded and printed successfully\"}}");
+
+            } catch (Exception e) {
+                System.out.println("[" + label + "] Error: " + e.getMessage());
+                if (driver != null) {
+                    ((JavascriptExecutor) driver).executeScript("browserstack_executor: {\"action\": \"setSessionStatus\", \"arguments\": {\"status\":\"failed\", \"reason\": \"" + e.getMessage() + "\"}}");
+                }
+
+                
+            } finally {
+                if (driver != null) driver.quit();
+            }
+        }
+
+       
+    }
+
+    // ======= 3. Build browser configurations =======
+    public static List<Map.Entry<MutableCapabilities, String>> getBrowserConfigs() {
+        List<Map.Entry<MutableCapabilities, String>> configs = new ArrayList<>();
+
+        configs.add(Map.entry(createCaps("Chrome", "latest", "Windows", "11", null), "Chrome on Windows"));
+        configs.add(Map.entry(createCaps("Edge", "latest", "Windows", "10", null), "Edge on Windows"));
+        configs.add(Map.entry(createCaps("Firefox", "latest", "OS X", "Ventura", null), "Firefox on macOS"));
+        configs.add(Map.entry(createCaps("Firefox", "latest", "Windows", "10", null), "Firefox on Windows"));
+        configs.add(Map.entry(createCaps("Chrome", "latest", "Android", "13.0", "Samsung Galaxy S22"), "Chrome on Android"));
+
+        return configs;
+    }
+
+    public static MutableCapabilities createCaps(String browser, String version, String os, String osVersion, String device) {
+        MutableCapabilities caps = new MutableCapabilities();
+        caps.setCapability("browserName", browser);
+
+        Map<String, Object> bstackOptions = new HashMap<>();
+        bstackOptions.put("os", os);
+        bstackOptions.put("osVersion", osVersion);
+        bstackOptions.put("sessionName", browser + " Session");
+        bstackOptions.put("buildName", "CrossBrowserBuild");
+        bstackOptions.put("seleniumVersion", "4.18.1");
+        bstackOptions.put("userName", USERNAME);
+        bstackOptions.put("accessKey", ACCESS_KEY);
+        
+        bstackOptions.put("networkLogs", true);
+        bstackOptions.put("consoleLogs", "info");
+
+
+        if (device != null) {
+            bstackOptions.put("deviceName", device);
+            bstackOptions.put("realMobile", true);
+        }
+
+        caps.setCapability("bstack:options", bstackOptions);
+        return caps;
+    }
+
+    // ======= 4. Main method to run all threads =======
+    public static void main(String[] args) {
+        List<Map.Entry<MutableCapabilities, String>> configs = getBrowserConfigs();
+        ExecutorService executor = Executors.newFixedThreadPool(configs.size());
+
+        for (Map.Entry<MutableCapabilities, String> entry : configs) {
+            executor.submit(new CrossBrowserTask(entry.getKey(), entry.getValue()));
+        }
+
+        executor.shutdown();
+    }
+}
+
+
